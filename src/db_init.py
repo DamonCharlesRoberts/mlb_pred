@@ -2,6 +2,9 @@
 
 import argparse as ap
 import duckdb as db
+import polars as pl
+
+from statsapi import get
 
 def parse_args() -> str:
     # Define the argument parser for the command line.
@@ -13,6 +16,27 @@ def parse_args() -> str:
     # Return the argument.
     return args.path
 
+def meta_table(con:db.duckdbDBConnection) -> None:
+    """Initialize a table with the main ID's for the database.
+    
+    Args:
+        con (duckdb.duckDBConnection): The connection to the database.
+    """
+    # Get a dictionary of the teams.
+    teams = get("teams", params={"sportId":1})
+    # Convert to a dataframe.
+    df_teams = pl.DataFrame(teams).unnest("teams")
+    # Place dataframe in a table.
+    con.execute(
+        """
+        create table teams as (
+            select *
+            from df_teams
+        );
+        """
+    )
+    
+
 def init_tables(con:db.duckdbDBConnection) -> None:
     """Initialize the tables for the database.
 
@@ -22,6 +46,7 @@ def init_tables(con:db.duckdbDBConnection) -> None:
     # Initialize the tables.
     con.execute(
         """
+
         """
     )
 
