@@ -16,7 +16,7 @@ def parse_args() -> str:
     # Return the argument.
     return args.path
 
-def meta_table(con:db.duckdbDBConnection) -> None:
+def meta_table(con:db.DuckDBPyConnection) -> None:
     """Initialize a table with the main ID's for the database.
     
     Args:
@@ -37,7 +37,7 @@ def meta_table(con:db.duckdbDBConnection) -> None:
     )
     
 
-def init_tables(con:db.duckdbDBConnection) -> None:
+def init_tables(con:db.DuckDBPyConnection) -> None:
     """Initialize the tables for the database.
 
     Args:
@@ -53,7 +53,11 @@ def init_tables(con:db.duckdbDBConnection) -> None:
 def main():
     """Main function"""
     # Pull in the connection from the argument.
-    con = parse_args()
+    path = parse_args()
+    # Connect to the db.
+    con = db.connect(path)
+    # Create the meta table.
+    meta_table(con)
     # Initialize the tables in the DB.
     init_tables(con)
 
