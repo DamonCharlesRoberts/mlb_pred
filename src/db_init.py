@@ -73,25 +73,9 @@ def meta_table(con:db.DuckDBPyConnection) -> None:
     """
     # Get a dictionary of the teams.
     teams = get("teams", params={"sportId":1})
-    seasons = get("seasons", params={"all":True, "sportId":1})
     schedule = get("schedule", params={"sportId":1, "season":2024})
     # Convert to a dataframe.
     df_teams = pl.DataFrame(teams).unnest("teams")
-    df_seasons = (
-        pl.DataFrame(seasons)
-        .unnest("seasons")
-        .select([
-            "seasonId"
-            , "hasWildcard"
-            , "preSeasonStartDate"
-            , "seasonStartDate"
-            , "regularSeasonStartDate"
-            , "regularSeasonEndDate"
-            , "seasonEndDate"
-            , "offseasonStartDate"
-            , "offSeasonEndDate"
-        ])
-    )
     df_schedule = (
         pl.DataFrame(schedule)
         .select(["dates"])
