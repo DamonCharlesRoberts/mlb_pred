@@ -49,8 +49,10 @@ def seasons_ingest(con:db.DuckDBPyConnection) -> None:
     # - Insert the data into the DB.
     con.execute(
         """
-        insert into seasons
-            select * from df_seasons;
+        insert into seasons (
+            select * 
+            from df_seasons
+        );
         """
     )
 
@@ -65,8 +67,9 @@ def teams_ingest(con:db.DuckDBPyConnection) -> None:
     # 1. Get a list of seasons.
     seasons = con.sql(
         """
-        select distinct season_id 
-        from seasons
+        select 
+            distinct season_id 
+        from seasons;
         """
     ).fetchall()
     list_seasons = [i[0] for i in seasons]
@@ -89,7 +92,10 @@ def teams_ingest(con:db.DuckDBPyConnection) -> None:
         con.execute(
             """
             insert into teams (
-                season_id, team_id, team_name, team_abbr
+                season_id
+                , team_id
+                , team_name
+                , team_abbr
             )
             select 
                 season
@@ -111,7 +117,8 @@ def schedule_ingest(con:db.DuckDBPyConnection) -> None:
     # 1. Get a list of seasons.
     seasons = con.sql(
         """
-        select distinct season_id
+        select 
+            distinct season_id
         from seasons;
         """
     ).fetchall()
