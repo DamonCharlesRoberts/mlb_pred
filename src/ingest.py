@@ -7,6 +7,8 @@ import polars as pl
 from loguru import logger
 from statsapi import get
 
+# TODO: Adjust functions so that it appends new data to what is existing in the DB.
+
 def parse_args() -> tuple[str, str]:
     # Define the argument parser for the command line.
     parser = ap.ArgumentParser("Initialize the tables.")
