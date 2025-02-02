@@ -129,48 +129,100 @@ def teams_ingest(con:db.DuckDBPyConnection) -> None:
         )
 
 
-# 
-# def meta_table(con:db.DuckDBPyConnection) -> None:
-#     """Initialize a table with the main ID's for the database.
-#     
-#     Args:
-#         con (duckdb.duckDBConnection): The connection to the database.
-#     """
-#     schedule = get("schedule", params={"sportId":1, "season":2024})
-#     # Convert to a dataframe.
-#     df_schedule = (
-#         pl.DataFrame(schedule)
-#         .select(["dates"])
-#         .unnest("dates")
-#         .explode("games")
-#         .unnest("games")
-#         .unnest("teams")
-#         .with_columns(
-#             pl.col("away").struct.field("team").struct.field("id").alias("away_team")
-#             , pl.col("away").struct.field("leagueRecord").struct.field("wins").alias("away_team_wins")
-#             , pl.col("away").struct.field("leagueRecord").struct.field("losses").alias("away_team_losses")
-#             , pl.col("home").struct.field("team").struct.field("id").alias("home_team")
-#             , pl.col("home").struct.field("leagueRecord").struct.field("wins").alias("home_team_wins")
-#             , pl.col("home").struct.field("leagueRecord").struct.field("losses").alias("home_team_losses")
-#         )
-#         .select(
-#             [
-#                 "season"
-#                 ,"date"
-#                 , "gamePk"
-#                 , "doubleHeader"
-#                 , "away_team"
-#                 , "away_team_wins"
-#                 , "away_team_losses"
-#                 , "home_team"
-#                 , "home_team_wins"
-#                 , "home_team_losses"
-#             ]
-#         )
-#     )
-#     
-# 
-# 
+def schedule_ingest(con:db.DuckDBPyConnection) -> None:
+    """The ingestion of schedules for the season.
+
+    Args:
+        con (duckdb.duckDBConnection): The connection to the database.
+    """
+    # Initialize the table.
+    con.execute(
+        """
+        create table schedule (
+            season_id varchar(4)
+            , game_date date
+            , game_id varchar(50)
+            , double_header varchar(1)
+            , away_team varchar(4)
+            , away_team_wins integer
+            , away_team_losses integer
+            , home_team varchar(4)
+            , home_team_wins integer
+            , home_team_losses integer
+            , foreign key (season_id) references seasons(season_id)
+            -- Would have these keys set, but the api data has 
+            -- duplicate/missing values for these...
+            -- , foreign key (season_id, away_team) references teams(season_id, team_id)
+            -- , foreign key (season_id, home_team) references teams(season_id, team_id)
+            -- , primary key (season_id, game_id)
+        )
+        """
+    )
+    # Pull the data from the api.
+    # 1. Get a list of seasons.
+    seasons = con.sql(
+        """
+        select distinct season_id
+        from seasons;
+        """
+    ).fetchall()
+    list_seasons = [i[0] for i in seasons]
+    # 2. For each season, make a call to the api to get the schedule.
+    for i in list_seasons:
+        # Pull from the api.
+        schedule = get("schedule", params={"sportId":1, "season":i})
+
+        # Place in a DataFrame.
+        try:
+            df_schedule = (
+                pl.DataFrame(schedule)
+                .select(["dates"])
+                .unnest("dates")
+                .explode("games")
+                .unnest("games")
+                .unnest("teams")
+                .with_columns(
+                    pl.col("away").struct.field("team").struct.field("id").alias("away_team")
+                    , pl.col("away").struct.field("leagueRecord").struct.field("wins").alias("away_team_wins")
+                    , pl.col("away").struct.field("leagueRecord").struct.field("losses").alias("away_team_losses")
+                    , pl.col("home").struct.field("team").struct.field("id").alias("home_team")
+                    , pl.col("home").struct.field("leagueRecord").struct.field("wins").alias("home_team_wins")
+                    , pl.col("home").struct.field("leagueRecord").struct.field("losses").alias("home_team_losses")
+                )
+                .select([
+                    "season"
+                    , "date"
+                    , "gamePk"
+                    , "doubleHeader"
+                    , "away_team"
+                    , "away_team_wins"
+                    , "away_team_losses"
+                    , "home_team"
+                    , "home_team_wins"
+                    , "home_team_losses"
+                ])
+            )
+            # Insert into the table.
+            con.execute(
+                """
+                insert into schedule (
+                    season_id, game_date, game_id, double_header
+                    , away_team, away_team_wins, away_team_losses
+                    , home_team, home_team_wins, home_team_losses
+                )
+                select
+                    season, date, gamePk, doubleHeader
+                    , away_team, away_team_wins, away_team_losses
+                    , home_team, home_team_wins, home_team_losses
+                from df_schedule;
+                """
+            )
+        # If I get a schema error, it means there are not any games
+        # recorded for that season, so I should move on.
+        except pl.exceptions.SchemaError:
+            continue
+
+
 def main():
     """Main function"""
     logger.info("Data ingestion beginning.")
@@ -185,9 +237,11 @@ def main():
     # Teams ingest.
     teams_ingest(con)
     logger.success("Ingested data for each team in each season.")
+    # Schedule ingest.
+    schedule_ingest(con)
+    logger.success("Ingested schedule data for each season.")
     # Completion of ingest process.
     logger.info("Data ingestion complete.")
-
 
 
 if __name__ == "__main__":
