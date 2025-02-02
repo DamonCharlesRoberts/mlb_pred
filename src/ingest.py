@@ -4,6 +4,7 @@ import argparse as ap
 import duckdb as db
 import polars as pl
 
+from loguru import logger
 from statsapi import get
 
 def parse_args() -> str:
@@ -17,6 +18,7 @@ def parse_args() -> str:
     return args.path
 
 
+
 def seasons_ingest(con:db.DuckDBPyConnection) -> None:
     """Initialize a table of the Seasons for the MLB.
 
@@ -27,15 +29,16 @@ def seasons_ingest(con:db.DuckDBPyConnection) -> None:
     con.execute(
         """
         create table seasons (
-            seasonId varchar(4)
-            , hasWildcard boolean
-            , preSeasonStartDate date
-            , seasonStartDate date
-            , regularSeasonStartDate date
-            , regularSeasonEndDate date
-            , seasonEndDate date
-            , offseasonStartDate date
-            , offSeasonEndDate date
+            season_id varchar(4)
+            , has_wildcard boolean
+            , preseason_start date
+            , season_start date
+            , regular_season_start date
+            , regular_season_end date
+            , season_end date
+            , offseason_start date
+            , offSeason_end date
+            , primary key (season_id)
         );
         """
     )
@@ -66,6 +69,66 @@ def seasons_ingest(con:db.DuckDBPyConnection) -> None:
         """
     )
 
+
+def teams_ingest(con:db.DuckDBPyConnection) -> None:
+    """Ingest the teams data for each season.
+
+    Args:
+        con (duckdb.DuckDBPyConnection): The connection to the database.
+    """
+    # Initialize the table.
+    con.execute(
+        """
+        create table teams (
+            season_id varchar(4)
+            , team_id varchar(4)
+            , team_name varchar(50)
+            , team_abbr varchar(4)
+            , foreign key (season_id) references seasons(season_id)
+            , primary key (season_id, team_id)
+        );
+        """
+    )
+    # Pull the data from the API.
+    # 1. Get a list of seasons.
+    seasons = con.sql(
+        """
+        select distinct season_id 
+        from seasons
+        """
+    ).fetchall()
+    list_seasons = [i[0] for i in seasons]
+    # 2. For each season, make a call to the API to get the list of teams.
+    for i in list_seasons:
+        # Pull from the api.
+        teams = get("teams", params={"sportId":1, "season":i})
+        # Place in a DataFrame.
+        df_teams = (
+            pl.DataFrame(teams)
+            .unnest("teams")
+            .select([
+                "season"
+                , "id"
+                , "name"
+                , "abbreviation"
+            ])
+        )
+        # Insert the dataframe into the DB.
+        con.execute(
+            """
+            insert into teams (
+                season_id, team_id, team_name, team_abbr
+            )
+            select 
+                season
+                , id
+                , name
+                , abbreviation
+            from df_teams;
+            """
+        )
+
+
 # 
 # def meta_table(con:db.DuckDBPyConnection) -> None:
 #     """Initialize a table with the main ID's for the database.
@@ -73,11 +136,8 @@ def seasons_ingest(con:db.DuckDBPyConnection) -> None:
 #     Args:
 #         con (duckdb.duckDBConnection): The connection to the database.
 #     """
-#     # Get a dictionary of the teams.
-#     teams = get("teams", params={"sportId":1})
 #     schedule = get("schedule", params={"sportId":1, "season":2024})
 #     # Convert to a dataframe.
-#     df_teams = pl.DataFrame(teams).unnest("teams")
 #     df_schedule = (
 #         pl.DataFrame(schedule)
 #         .select(["dates"])
@@ -108,42 +168,26 @@ def seasons_ingest(con:db.DuckDBPyConnection) -> None:
 #             ]
 #         )
 #     )
-#     # Place dataframe in a table.
-#     con.execute(
-#         """
-#         create table teams as (
-#             select *
-#             from df_teams
-#         );
-#         create table seasons as (
-#             select *
-#             from df_seasons
-#         )
-#         """
-#     )
 #     
 # 
-# def init_tables(con:db.DuckDBPyConnection) -> None:
-#     """Initialize the tables for the database.
-# 
-#     Args:
-#         con (duckdb.duckDBConnection): The connection to the database.
-#     """
-#     # Initialize the tables.
-#     con.execute(
-#         """
-# 
-#         """
-#     )
 # 
 def main():
     """Main function"""
+    logger.info("Data ingestion beginning.")
     # Pull in the connection from the argument.
     path = parse_args()
     # Connect to the db.
     con = db.connect(path)
-    # Season ingest function.
+    logger.success(f"Connected to the DB at: {path}.")
+    # Season ingest.
     seasons_ingest(con)
+    logger.success("Ingested data for each season.")
+    # Teams ingest.
+    teams_ingest(con)
+    logger.success("Ingested data for each team in each season.")
+    # Completion of ingest process.
+    logger.info("Data ingestion complete.")
+
 
 
 if __name__ == "__main__":

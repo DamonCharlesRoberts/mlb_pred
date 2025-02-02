@@ -12,6 +12,7 @@ argparse = "^1.4.0"
 mlb-statsapi = "^1.8.1"
 polars = "^1.21.0"
 pyarrow = "^19.0.0"
+loguru = "^0.7.3"
 
 
 [build-system]
