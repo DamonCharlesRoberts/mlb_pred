@@ -2,3 +2,4 @@
 **/__pycache__/**
 # Duckdb files.
 **/*.db.wal
+**/*.db
