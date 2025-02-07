@@ -28,7 +28,7 @@ class Initializer(object):
                 , primary key (season_id)
             );
             """
-)
+        )
 
     def teams(self) -> None:
         """Initialize the teams table."""
@@ -67,7 +67,7 @@ class Initializer(object):
                 -- , foreign key (season_id, home_team) references teams(season_id, team_id)
             );
             """
-)
+        )
 
     def close_con(self) -> None:
         """Close connection to the DB."""
