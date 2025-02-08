@@ -3,6 +3,7 @@
 import duckdb as db
 import polars as pl
 
+from datetime import date
 from loguru import logger
 from statsapi import get
 
@@ -52,7 +53,7 @@ class Initializer(object):
             create table schedule (
                 season_id varchar(4)
                 , game_date date
-                , game_id varchar(4)
+                , game_id varchar(10)
                 , double_header varchar(1)
                 , away_team varchar(4)
                 , away_team_wins integer
@@ -67,7 +68,19 @@ class Initializer(object):
                 -- , foreign key (season_id, home_team) references teams(season_id, team_id)
             );
             """
-)
+        )
+
+    def score(self) -> None:
+        self.con.execute(
+            """
+            create table scores (
+                game_id varchar(10)
+                , home_runs integer
+                , away_runs integer
+                , primary key (game_id)
+            );
+            """
+        )
 
     def close_con(self) -> None:
         """Close connection to the DB."""
@@ -82,6 +95,8 @@ class Initializer(object):
         logger.success("Teams table initialized.")
         self.schedule()
         logger.success("Schedule table initialized.")
+        self.score()
+        logger.success("Score table initialized.")
         self.close_con()
         logger.success("Tables initialized!")
 
@@ -224,6 +239,58 @@ class Ingestor(object):
                 except pl.exceptions.SchemaError:
                     continue
 
+    def score(self) -> None:
+        """Ingest the score data."""
+        # Get current date.
+        today = date.today()
+        # Get the list of game_ids for games before the current date.
+        games = self.con.sql(
+            f"""
+            select
+                game_id
+            from schedule
+            where game_date <= cast('{today}' as date);
+            """
+        ).pl().to_series().to_list()
+        # Get a list of game_ids already in the table.
+        games_stored = self.con.sql(
+            f"""
+            select
+                game_id
+            from scores
+            """
+        ).pl().to_series().to_list()
+        # Now filter the games that I need to get scores for.
+        games_filtered = [x for x in games if x not in games_stored]
+        # Now for each game, extract the score.
+        scores = []
+        for i in games_filtered:
+            runs_dict = {"game_id": i}
+            score = get("game_linescore", params={"gamePk":i})
+            runs_dict.update({team: stats['runs'] for team, stats in score.get("teams").items()})
+            scores.append(runs_dict)
+        # Convert to a dataframe.
+        df_scores = pl.DataFrame(scores)
+        print(scores)
+        try:
+            # Put in table.
+            self.con.execute(
+                """
+                insert into scores (
+                    game_id
+                    , home_runs
+                    , away_runs
+                )
+                select
+                    game_id
+                    , home_runs
+                    , away_runs
+                from df_scores;
+                """
+            )
+        except db.duckdb.InvalidInputException:
+            logger.info("No new game data to input.")
+
     def close_con(self) -> None:
         """Close connection."""
         self.con.close()
@@ -237,5 +304,7 @@ class Ingestor(object):
         logger.success("Team data ingested.")
         self.schedule()
         logger.success("Schedule data ingested.")
+        self.score()
+        logger.success("Scores data ingested.")
         self.close_con()
         logger.success("Data ingestion complete!")
