@@ -262,19 +262,20 @@ class Ingestor(object):
         ).pl().to_series().to_list()
         # Now filter the games that I need to get scores for.
         games_filtered = [x for x in games if x not in games_stored]
-        # Now for each game, extract the score.
-        for i in games_filtered:
-            runs_dict = {"game_id": i}
-            score = get("game_linescore", params={"gamePk":i})
-            self.con.execute(
-                f"""
-                insert into scores (game_id, home_runs, away_runs)
-                values (
-                    {i}
-                    , {score.get("teams").get("home").get("runs")}
-                    , {score.get("teams").get("away").get("runs")})
-                """
-            )
+        if len(games_filtered) > 0:
+            # Now for each game, extract the score.
+            for i in games_filtered:
+                runs_dict = {"game_id": i}
+                score = get("game_linescore", params={"gamePk":i})
+                self.con.execute(
+                    f"""
+                    insert into scores (game_id, home_runs, away_runs)
+                    values (
+                        {i}
+                        , {score.get("teams").get("home").get("runs")}
+                        , {score.get("teams").get("away").get("runs")})
+                    """
+                )
 
     def close_con(self) -> None:
         """Close connection."""
