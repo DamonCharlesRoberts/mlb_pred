@@ -265,7 +265,6 @@ class Ingestor(object):
         if len(games_filtered) > 0:
             # Now for each game, extract the score.
             for i in games_filtered:
-                runs_dict = {"game_id": i}
                 score = get("game_linescore", params={"gamePk":i})
                 self.con.execute(
                     f"""
