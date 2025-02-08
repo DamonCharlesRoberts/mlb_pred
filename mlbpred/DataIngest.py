@@ -3,13 +3,14 @@
 import duckdb as db
 import polars as pl
 
+from datetime import date
 from loguru import logger
 from statsapi import get
 
-class Initializer(object):
+class Initializer:
     def __init__(self, db_path):
-        self.db_path=db_path
-        self.con=db.connect(db_path)
+        self.db_path:str=db_path
+        self.con:db.DuckDBPyConnection=db.connect(db_path)
 
     def seasons(self) -> None:
         """Initialize the seasons table."""
@@ -52,7 +53,7 @@ class Initializer(object):
             create table schedule (
                 season_id varchar(4)
                 , game_date date
-                , game_id varchar(4)
+                , game_id varchar(10)
                 , double_header varchar(1)
                 , away_team varchar(4)
                 , away_team_wins integer
@@ -65,6 +66,17 @@ class Initializer(object):
                 --  duplicate/missing values for these...
                 -- , foreign key (season_id, away_team) references teams(season_id, team_id)
                 -- , foreign key (season_id, home_team) references teams(season_id, team_id)
+            );
+            """
+        )
+
+    def score(self) -> None:
+        self.con.execute(
+            """
+            create table scores (
+                game_id varchar(10)
+                , home_runs integer
+                , away_runs integer
             );
             """
         )
@@ -82,14 +94,16 @@ class Initializer(object):
         logger.success("Teams table initialized.")
         self.schedule()
         logger.success("Schedule table initialized.")
+        self.score()
+        logger.success("Score table initialized.")
         self.close_con()
         logger.success("Tables initialized!")
 
 
-class Ingestor(object):
+class Ingestor:
     def __init__(self, db_path):
-        self.db_path=db_path
-        self.con=db.connect(db_path)
+        self.db_path:str=db_path
+        self.con:db.DuckDBPyConnection=db.connect(db_path)
 
     def season(self) -> None:
         """Ingest the data of every season for the MLB."""
@@ -224,6 +238,53 @@ class Ingestor(object):
                 except pl.exceptions.SchemaError:
                     continue
 
+    def score(self) -> None:
+        """Ingest the score data."""
+        # Get current date.
+        today = date.today()
+        # Get the list of game_ids for games before the current date.
+        games = self.con.sql(
+            f"""
+            select
+                schedule.game_id
+            from schedule
+                left join seasons
+                on schedule.season_id=seasons.season_id
+            where 
+                (schedule.game_date <= cast('{today}' as date))
+                and (cast(schedule.season_id as integer) >= 2019)
+                and (schedule.game_date 
+                    between seasons.regular_season_start 
+                        and seasons.regular_season_end)
+            """
+        ).pl().to_series().to_list()
+        # Get a list of game_ids already in the table.
+        games_stored = self.con.sql(
+            f"""
+            select
+                game_id
+            from scores
+            """
+        ).pl().to_series().to_list()
+        # Now filter the games that I need to get scores for.
+        games_filtered = [x for x in games if x not in games_stored]
+        if len(games_filtered) > 0:
+            # Now for each game, extract the score.
+            for i in games_filtered:
+                score = get("game_linescore", params={"gamePk":i})
+                try:
+                    self.con.execute(
+                        f"""
+                        insert into scores (game_id, home_runs, away_runs)
+                        values (
+                            {i}
+                            , {score.get("teams").get("home").get("runs")}
+                            , {score.get("teams").get("away").get("runs")})
+                        """
+                    )
+                except db.duckdb.BinderException:
+                    continue
+
     def close_con(self) -> None:
         """Close connection."""
         self.con.close()
@@ -237,5 +298,7 @@ class Ingestor(object):
         logger.success("Team data ingested.")
         self.schedule()
         logger.success("Schedule data ingested.")
+        self.score()
+        logger.success("Scores data ingested.")
         self.close_con()
         logger.success("Data ingestion complete!")
