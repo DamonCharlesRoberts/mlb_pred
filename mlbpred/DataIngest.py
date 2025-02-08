@@ -77,7 +77,6 @@ class Initializer(object):
                 game_id varchar(10)
                 , home_runs integer
                 , away_runs integer
-                , primary key (game_id)
             );
             """
         )
@@ -266,15 +265,18 @@ class Ingestor(object):
             # Now for each game, extract the score.
             for i in games_filtered:
                 score = get("game_linescore", params={"gamePk":i})
-                self.con.execute(
-                    f"""
-                    insert into scores (game_id, home_runs, away_runs)
-                    values (
-                        {i}
-                        , {score.get("teams").get("home").get("runs")}
-                        , {score.get("teams").get("away").get("runs")})
-                    """
-                )
+                try:
+                    self.con.execute(
+                        f"""
+                        insert into scores (game_id, home_runs, away_runs)
+                        values (
+                            {i}
+                            , {score.get("teams").get("home").get("runs")}
+                            , {score.get("teams").get("away").get("runs")})
+                        """
+                    )
+                except db.duckdb.BinderException:
+                    continue
 
     def close_con(self) -> None:
         """Close connection."""
