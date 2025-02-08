@@ -7,10 +7,10 @@ from datetime import date
 from loguru import logger
 from statsapi import get
 
-class Initializer(object):
+class Initializer:
     def __init__(self, db_path):
-        self.db_path=db_path
-        self.con=db.connect(db_path)
+        self.db_path:str=db_path
+        self.con:db.DuckDBPyConnection=db.connect(db_path)
 
     def seasons(self) -> None:
         """Initialize the seasons table."""
@@ -100,10 +100,10 @@ class Initializer(object):
         logger.success("Tables initialized!")
 
 
-class Ingestor(object):
+class Ingestor:
     def __init__(self, db_path):
-        self.db_path=db_path
-        self.con=db.connect(db_path)
+        self.db_path:str=db_path
+        self.con:db.DuckDBPyConnection=db.connect(db_path)
 
     def season(self) -> None:
         """Ingest the data of every season for the MLB."""
@@ -246,9 +246,16 @@ class Ingestor(object):
         games = self.con.sql(
             f"""
             select
-                game_id
+                schedule.game_id
             from schedule
-            where game_date <= cast('{today}' as date);
+                left join seasons
+                on schedule.season_id=seasons.season_id
+            where 
+                (schedule.game_date <= cast('{today}' as date))
+                and (cast(schedule.season_id as integer) >= 2019)
+                and (schedule.game_date 
+                    between seasons.regular_season_start 
+                        and seasons.regular_season_end)
             """
         ).pl().to_series().to_list()
         # Get a list of game_ids already in the table.
