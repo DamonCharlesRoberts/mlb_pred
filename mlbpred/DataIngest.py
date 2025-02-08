@@ -263,33 +263,18 @@ class Ingestor(object):
         # Now filter the games that I need to get scores for.
         games_filtered = [x for x in games if x not in games_stored]
         # Now for each game, extract the score.
-        scores = []
         for i in games_filtered:
             runs_dict = {"game_id": i}
             score = get("game_linescore", params={"gamePk":i})
-            runs_dict.update({team: stats['runs'] for team, stats in score.get("teams").items()})
-            scores.append(runs_dict)
-        # Convert to a dataframe.
-        df_scores = pl.DataFrame(scores)
-        print(scores)
-        try:
-            # Put in table.
             self.con.execute(
-                """
-                insert into scores (
-                    game_id
-                    , home_runs
-                    , away_runs
-                )
-                select
-                    game_id
-                    , home_runs
-                    , away_runs
-                from df_scores;
+                f"""
+                insert into scores (game_id, home_runs, away_runs)
+                values (
+                    {i}
+                    , {score.get("teams").get("home").get("runs")}
+                    , {score.get("teams").get("away").get("runs")})
                 """
             )
-        except db.duckdb.InvalidInputException:
-            logger.info("No new game data to input.")
 
     def close_con(self) -> None:
         """Close connection."""
