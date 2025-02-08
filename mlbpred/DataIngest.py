@@ -29,7 +29,7 @@ class Initializer:
                 , primary key (season_id)
             );
             """
-)
+        )
 
     def teams(self) -> None:
         """Initialize the teams table."""
