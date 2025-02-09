@@ -3,3 +3,5 @@
 # Duckdb files.
 **/*.db.wal
 **/*.db
+# All data files.
+data/**

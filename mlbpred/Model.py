@@ -10,7 +10,7 @@ class Model:
         self
         , db_path:str="./data/twenty_five.db"
         , season:int=2024
-        , mod_path:str="./btl.stan"
+        , mod_path:str="./mlbpred/btl.stan"
     ):
         self.db_path = db_path
         self.con = db.connect(db_path)
@@ -24,8 +24,8 @@ class Model:
             f"""
             select
                 scores.game_id
-                , schedule.away_team
-                , schedule.home_team
+                , cast(schedule.away_team as integer) as away_team
+                , cast(schedule.home_team as integer) as home_team
                 , scores.away_runs
                 , scores.home_runs
             from scores
@@ -37,6 +37,7 @@ class Model:
         # Put in a dictionary to be ready for Stan readable JSON.
         data = {
             "N":df.shape[0]
+            , "J": 30
             , "T":df.select(["away_team", "home_team"]).to_numpy()
             , "S":df.select(["away_runs", "home_runs"]).to_numpy()
         }
@@ -53,8 +54,8 @@ class Model:
             data="./data/mod_data.json"
             , seed=123
             , iter_warmup=2000
-            , iter_samplling=2000
-            , console=True
+            , iter_sampling=2000
+            , show_console=True
         )
 
     def run(self):
