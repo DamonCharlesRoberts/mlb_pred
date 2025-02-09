@@ -16,9 +16,9 @@ transformed data {
   for (n in 1:N) {
     real diff = S[n, 1] - S[n, 2];
     if (diff < 0)
-      y[n] = 1;
-    else
       y[n] = 0;
+    else
+      y[n] = 1;
   }
   // Create a vector indicating each team.
   array[N] int away = to_array_1d(T[,1]);
