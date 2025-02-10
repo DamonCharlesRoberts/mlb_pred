@@ -42,10 +42,12 @@ model {
 
 generated quantities {
   // Now compute the ranking of each team based on who won.
-  // Do it based on descending logged odds (ability).
   array[J] int rank; // Ranking of the teams.
   {
+    // Get the ranking of each team in descending order of the alpha.
     array[J] int rank_index = sort_indices_desc(alpha);
+    // For each team, apply the rank so that the median value for rank[i]
+    // is the rank for team i.
     for (i in 1:J) {
       rank[rank_index[i]] = i;
     }
