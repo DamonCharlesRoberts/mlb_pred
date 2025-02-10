@@ -22,16 +22,50 @@ class Model:
         # Retrieve the data.
         df = self.con.sql(
             f"""
-            select
-                scores.game_id
-                , cast(schedule.away_team as integer) as away_team
-                , cast(schedule.home_team as integer) as home_team
-                , scores.away_runs
-                , scores.home_runs
-            from scores
-                left join schedule
-                on scores.game_id=schedule.game_id
-            where schedule.season_id like '%{self.season}%'
+            with a as (
+                select
+                    scores.game_id
+                    , cast(schedule.away_team as integer) as away_team
+                    , cast(schedule.home_team as integer) as home_team
+                    , scores.away_runs
+                    , scores.home_runs
+                from scores
+                    join schedule
+                    on scores.game_id=schedule.game_id
+                where schedule.season_id like '%{self.season}%'
+            )
+            , b as (
+                select
+                    distinct cast(team_id as integer) as team_id
+                    , row_number() over(order by team_id) as const_id
+                from teams
+                where season_id like '%{self.season}%'
+            )
+            , c as (
+                select
+                    a.game_id
+                    , b.const_id as away_team
+                    , a.home_team
+                    , a.away_runs
+                    , a.home_runs
+                from a
+                    left join b
+                        on a.away_team=b.team_id
+                where b.team_id not null
+            )
+            , d as (
+                select 
+                    c.game_id
+                    , c.away_team
+                    , b.const_id as home_team
+                    , c.away_runs
+                    , c.home_runs
+                from c
+                    left join b
+                        on c.home_team=b.team_id
+                where b.team_id not null
+            )
+            select distinct * from d
             """
         ).pl()
         # Put in a dictionary to be ready for Stan readable JSON.
