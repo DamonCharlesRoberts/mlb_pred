@@ -2,6 +2,7 @@
 
 import cmdstanpy
 import duckdb as db
+import plotly.express as px
 
 from loguru import logger
 
@@ -92,6 +93,44 @@ class Model:
             , show_console=True
         )
 
+    def get_estimates(self):
+        """Get the estimates from the model."""
+        draws = self.fit.summary()
+        draws["team_id"] = draws.index
+        self.con.sql(
+            f"""
+            copy (
+                with a as (
+                    select
+                        regexp_extract(team_id, '\\d+') as team_id
+                        , "5%" as ci_low
+                        , "50%" as median
+                        , "95%" as ci_high
+                    from draws
+                    where team_id like '%rank%'
+                )
+                , b as (
+                    select
+                        distinct cast(team_id as integer) as team_idt, team_abbr as team_abbr
+                        , row_number() over(order by team_id, team_abbr) as const_id
+                    from teams
+                    where season_id like '%{self.season}%'
+                )
+                , c as (
+                    select
+                        b.team_abbr
+                        , a.*
+                    from a
+                        join b
+                            on cast(a.team_id as integer)=b.const_id
+                )
+                select *
+                from c
+                order by median, ci_low, ci_high asc
+            ) to './_output/{self.season}_estimates.csv'
+            """
+        )
+
     def run(self):
         """Run all methods."""
         logger.info("Model fitting beginning.")
@@ -102,4 +141,6 @@ class Model:
         self.fit_model()
         logger.success("Fit the model.")
         logger.info("Model fitting complete!")
+        self.get_estimates()
+        logger.success("Extract estimates")
 

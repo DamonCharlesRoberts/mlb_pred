@@ -5,3 +5,5 @@
 **/*.db
 # All data files.
 data/**
+# Mac files.
+.DS_Store
