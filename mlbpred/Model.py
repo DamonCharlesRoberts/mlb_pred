@@ -2,7 +2,7 @@
 
 import cmdstanpy
 import duckdb as db
-import plotly.express as px
+import plotly.graph_objects as go
 
 from loguru import logger
 
@@ -111,7 +111,7 @@ class Model:
                 )
                 , b as (
                     select
-                        distinct cast(team_id as integer) as team_idt, team_abbr as team_abbr
+                        distinct cast(team_id as integer) as team_id, team_abbr as team_abbr
                         , row_number() over(order by team_id, team_abbr) as const_id
                     from teams
                     where season_id like '%{self.season}%'
@@ -131,6 +131,76 @@ class Model:
             """
         )
 
+    def _get_plot_data(self):
+        """Retrieve team abbrs and colors."""
+        df = self.fit.summary()
+        df["team_id"] = df.index
+        self.plot_df = self.con.sql(
+            f"""
+            with a as (
+                select
+                    regexp_extract(team_id, '\\d+') as team_id
+                    , "5%" as ci_low
+                    , "50%" as median
+                    , "95%" as ci_high
+                from df
+                where team_id like '%rank%'
+            )
+            , b as (
+                select
+                    distinct cast(team_id as integer) as team_id, team_abbr as team_abbr
+                    , row_number() over(order by team_id, team_abbr) as const_id
+                from teams
+                where season_id like '%{self.season}%'
+            )
+            , c as (
+                select *
+                from './data/team_colors.json'
+            )
+            select 
+                a.team_id
+                , b.team_abbr
+                , a.ci_low
+                , a.median
+                , a.ci_high
+                , c.primary
+                , c.secondary
+            from a
+                join b
+                    on a.team_id=b.const_id
+                join c
+                    on c.team=b.team_abbr
+            order by a.median
+            """
+        ).df()
+
+    def plot_estimates(self):
+        """Plot the ranked estimates."""
+        self._get_plot_data()
+        df = self.plot_df
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            y=df["team_abbr"]
+            , x=df["median"]
+            , mode="markers"
+            , marker=dict(color=df["primary"], size=15)
+        ))
+        for i in range(len(df)):
+            fig.add_trace(go.Scatter(
+                y=[df["team_abbr"][i], df["team_abbr"][i]]
+                , x=[df["ci_low"][i], df["ci_high"][i]]
+                , mode="lines"
+                , line=dict(color="#636363", width=1)
+                , showlegend=False
+            ))
+        fig.update_layout(
+            xaxis_title="Est. Team Rank"
+            , showlegend=False
+            , template="plotly_dark"
+            , xaxis=dict(autorange="reversed")
+        )
+        fig.write_html(f"./_output/{self.season}_estimates.html")
+
     def run(self):
         """Run all methods."""
         logger.info("Model fitting beginning.")
@@ -143,4 +213,7 @@ class Model:
         logger.info("Model fitting complete!")
         self.get_estimates()
         logger.success("Extract estimates")
+        self.plot_estimates()
+        logger.success("Plotted estimates.")
+
 
