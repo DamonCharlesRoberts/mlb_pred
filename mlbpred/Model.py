@@ -28,6 +28,27 @@ class Model:
         mod_path: The path to the STAN file containing the model.
 
     Methods:
+        _stanify_data: Pull data for the given season the model is being run on
+            from the DB, converts it to a format digestable by the stan model
+            , and stores it in a JSON file.
+        _compile: Compiles the stan model and creates an attribute of the 
+            resulting cmdstanpy.CmdStanModel object.
+        _fit_model: Fits the model and creates an attribute of the resulting
+            cmdstanpy.CmdStanModel.sample object.
+        _get_estimates: Pulls the lower-and-upper-bound estimate of team
+            ranks as well as the estimated median team rank for the model.
+            Stores a CSV file with this information summarizing the results
+            of the model.
+        _get_plot_data: Pulls the lower-and-upper-bound estimate of team
+            ranks as well as the estiamted median team rank for the model.
+            Joins team abbreviation and team primary color hex codes.
+            Returns these data as a dataframe to be passed to create a plot
+            that summarizes the result of the model.
+        _plot_estimates: Uses the dataframe summarizing the results of the
+            model using the attribute created by evoking the _get_plot_data
+            method, creates a plot with these data, then stores an HTML file
+            holding an interactive plot.
+        run: Applies all other methods in the class to the object.
     """
     def __init__(
         self
