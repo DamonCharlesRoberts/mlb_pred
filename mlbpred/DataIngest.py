@@ -1,5 +1,11 @@
-# Data ingestion.
+"""Data Ingestion.
 
+This module contains methods to ingest data from the MLB API.
+
+Classes:
+    Initializer: Contains methods to initialize the tables.
+    Ingestor: Contains methods to pull data from the API and store it in the DB.
+"""
 import duckdb as db
 import polars as pl
 
@@ -8,12 +14,36 @@ from loguru import logger
 from statsapi import get
 
 class Initializer:
+    """Initializes the tables.
+
+    Contains methods to initialize the tables for the data needed for the models.
+
+    Attributes:
+        db_path: Path to the DB file.
+        con: Pointer to the DB file.
+
+    Methods:
+        _seasons: Initializes the seasons table.
+        _teams: Initializes the teams table.
+        _schedule: Initializes the schedule table.
+        _score: Initializes the score table.
+        _close_con: Closes the Duckdb connection.
+        run: Evokes all of the other methods.
+    """
     def __init__(self, db_path):
         self.db_path:str=db_path
         self.con:db.DuckDBPyConnection=db.connect(db_path)
 
-    def seasons(self) -> None:
-        """Initialize the seasons table."""
+    def _seasons(self) -> None:
+        """Initialize the seasons table.
+
+        This method is responsible for initializing a seasons table.
+        The seasons table will contain data about the season such as the dates
+        of the season, and a season_id.
+
+        Returns:
+            A table called `seasons`.
+        """
         self.con.execute(
             """
             create table seasons (
@@ -31,8 +61,19 @@ class Initializer:
             """
         )
 
-    def teams(self) -> None:
-        """Initialize the teams table."""
+    def _teams(self) -> None:
+        """Initialize the teams table.
+
+        This method is respoinsible for initializing a teams table.
+        The teams table will contain basic information about each
+        team throughout the MLB's history. Will store information
+        on the season_id for which the team was active, the team_id
+        (which is used for the boxscore data), the team name, and
+        team abbreviation.
+
+        Returns:
+            A table called `teams`.
+        """
         self.con.execute(
             """
             create table teams (
@@ -46,8 +87,18 @@ class Initializer:
             """
         )
 
-    def schedule(self) -> None:
-        """Initialize the talbe of schedules for the MLB teams."""
+    def _schedule(self) -> None:
+        """Initialize schedule table.
+
+        This method is responsible for initializing a schedule table.
+        The schedule table will contain each game for each team in
+        each season. Besides a id for the game, it returns the game date
+        as well as the number of wins and losses for the home and away team
+        at the time of the game starting.
+
+        Returns:
+            A table called `schedule`.
+        """
         self.con.execute(
             """
             create table schedule (
@@ -70,7 +121,16 @@ class Initializer:
             """
         )
 
-    def score(self) -> None:
+    def _score(self) -> None:
+        """Initialize a score table.
+
+        This method is responsible for initializing a score table.
+        The score table stores basic boxscore results of how many runs
+        the home team has and away team has for each game in each season.
+
+        Returns:
+            A table called `scores`.
+        """
         self.con.execute(
             """
             create table scores (
@@ -81,22 +141,33 @@ class Initializer:
             """
         )
 
-    def close_con(self) -> None:
-        """Close connection to the DB."""
+    def _close_con(self) -> None:
+        """Close connection to the DB.
+
+        This method is important to have to ensure that the connection to the
+        DB is closed at the completion of the other methods' execution.
+        """
         self.con.close()
 
     def run(self) -> None:
-        """Run the methods above."""
+        """Evoke all methods on the object.
+
+        This method is responsible for applying all other methods on the object
+        for the class.
+
+        Returns:
+            The tables produced in the other methods.
+        """
         logger.info("Table initialization beginning.")
-        self.seasons()
+        self._seasons()
         logger.success("Seasons table initialized.")
-        self.teams()
+        self._teams()
         logger.success("Teams table initialized.")
-        self.schedule()
+        self._schedule()
         logger.success("Schedule table initialized.")
-        self.score()
+        self._score()
         logger.success("Score table initialized.")
-        self.close_con()
+        self._close_con()
         logger.success("Tables initialized!")
 
 
