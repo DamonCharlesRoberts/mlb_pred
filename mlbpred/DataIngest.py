@@ -180,6 +180,16 @@ class Ingestor:
     Attributes:
         db_path: Path to the DB file.
         con: Pointer to the DB.
+        season_list: A list of season_id's.
+
+    Methods:
+        _season: Ingests the seasons data.
+        _list_seasons: Returns a list of season_id's.
+        _teams: Ingests the teams data.
+        _schedule: Ingests the schedule data.
+        _score: Ingests the score data.
+        _close_con: Closes the connection to the DB.
+        run: Evokes the other methods.
     """
     def __init__(self, db_path):
         self.db_path:str=db_path
