@@ -172,12 +172,29 @@ class Initializer:
 
 
 class Ingestor:
+    """Ingests the data.
+
+    This class contains methods to access the MLB API, process the responses,
+    and places the data into the DB.
+
+    Attributes:
+        db_path: Path to the DB file.
+        con: Pointer to the DB.
+    """
     def __init__(self, db_path):
         self.db_path:str=db_path
         self.con:db.DuckDBPyConnection=db.connect(db_path)
 
-    def season(self) -> None:
-        """Ingest the data of every season for the MLB."""
+    def _season(self) -> None:
+        """Ingests the seasons data.
+
+        This method is responsible for making a call to the seasons
+        endpoint for the MLB API to access information on each season
+        in the MLB's history. With the response containing those data,
+        this method then places them into the seasons table. Since
+        schedule, team, and game data depends on season id's, it is important
+        that this method is evoked first.
+        """
         # Pull the data from the API.
         seasons = get("seasons", params={"all":True, "sportId":1})
         # Convert to DF.
@@ -206,8 +223,15 @@ class Ingestor:
             """
         )
 
-    def list_seasons(self) -> list[str]:
-        """Get the list of seasons."""
+    def _list_seasons(self) -> list[str]:
+        """Get the list of seasons.
+
+        This method accesses the seasons table to get a list of all
+        season_id's. The method will then return the result.
+
+        Returns:
+            list[str]: A list of season_id's pulled from the seasons table.
+        """
         seasons = self.con.sql(
             """
             select
@@ -218,11 +242,19 @@ class Ingestor:
         self.season_list = [i[0] for i in seasons]
         return self.season_list
 
-    def teams(self) -> None:
-        """Ingest the teams data for each season."""
+    def _teams(self) -> None:
+        """Ingest the teams data.
+
+        This method is responsible for making a call to the teams endpoint
+        in the MLB API to retrieve a response containing data on each team
+        in each season of the MLB's history. The team id's pulled from this
+        endpoint is useful to join team names and team abbreviations
+        (which are also in the response to this endpoint) into more digestible
+        labels for data visualizations.
+        """
         # Extract data from API.
         # - Get list of seasons.
-        self.list_seasons()
+        self._list_seasons()
         # - For each season, make a call to the Api.
         for i in self.season_list:
             teams = get("teams", params={"sportId":1, "season":i})
@@ -253,11 +285,24 @@ class Ingestor:
                 """
             )
 
-    def schedule(self) -> None:
-        """Ingest the schedule for each season."""
+    def _schedule(self) -> None:
+        """Ingest the schedule for each season.
+
+        This method is responsible for making a call to the schedule endpoint
+        in the MLB API to retrieve a response containing the schedule for all 
+        teams in each season of the MLB's history. The response contains 
+        information about each game such as the game_id's and which team_id's 
+        were involved for that particular game. These information will be used
+        to pull boxscores in the _score method.
+
+        From testing the API's response, there are some seasons that have
+        no details in it. In which case, polars will raise a SchemaError
+        exception. Since I cannot do anything about this, I continue the
+        loop.
+        """
         # Pull the data from the Api.
         # - Get the list of seasons.
-        self.list_seasons()
+        self._list_seasons()
         # - For each season, ingest the schedule.
         for i in self.season_list:
                 schedule = get("schedule", params={"sportId":1, "season":i})
@@ -309,8 +354,26 @@ class Ingestor:
                 except pl.exceptions.SchemaError:
                     continue
 
-    def score(self) -> None:
-        """Ingest the score data."""
+    def _score(self) -> None:
+        """Ingest the score data.
+
+        This method is responsible for retrieving the box score for each 
+        regular season game in all seasons from the day that this method is 
+        evoked back to 2019. I do this rather than pulling all box scores
+        ever, because it is extremely laborious and I do not want to make the
+        MLB reconsider the accessibility of this wonderful resource.
+
+        One nifty trick that this method does is that it first checks the database
+        for any regular season game that I may have between today and 2019. It then
+        filters those out so that I am not making calls for box scores that I already
+        have data for. I then update the scores table with the box scores from games
+        that were not previously there.
+
+        The boxscore data are kind of messy. E.g., game_id's aren't a great
+        primary key even if I use season_id and game_id. So, in cases where the
+        data violate a constraint for the table, I will skip adding the boxscore
+        data to the scores table in the db if duckdb raises a BinderException exception.
+        """
         # Get current date.
         today = date.today()
         # Get the list of game_ids for games before the current date.
@@ -356,20 +419,24 @@ class Ingestor:
                 except db.duckdb.BinderException:
                     continue
 
-    def close_con(self) -> None:
-        """Close connection."""
+    def _close_con(self) -> None:
+        """Close connection.
+
+        This method is important to have to ensure that the connection to the
+        DB is closed at the completion of the other methods' execution.
+        """
         self.con.close()
 
     def run(self) -> None:
         "Run the ingestion."
         logger.info("Data ingestion beginning.")
-        self.season()
+        self._season()
         logger.success("Season data ingested.")
-        self.teams()
+        self._teams()
         logger.success("Team data ingested.")
-        self.schedule()
+        self._schedule()
         logger.success("Schedule data ingested.")
-        self.score()
+        self._score()
         logger.success("Scores data ingested.")
-        self.close_con()
+        self._close_con()
         logger.success("Data ingestion complete!")
