@@ -1,5 +1,15 @@
-# Model Executors.
+"""Model execution.
 
+This module contains methods to execute the Paired comparisons models
+on the boxscore data stored in the database.
+
+To use these methods, one should first be sure to initialize the data
+and ingest the data from the MLB API by using what is in the 
+mlbpred.DataIngest module.
+
+Classes:
+    Model: Contains methods to execute the paired comparisons model.
+"""
 import cmdstanpy
 import duckdb as db
 import plotly.graph_objects as go
@@ -7,6 +17,18 @@ import plotly.graph_objects as go
 from loguru import logger
 
 class Model:
+    """Executes one of the paired comparisons models.
+
+    Contains methods to fit one of the paired comparisons models.
+
+    Attributes:
+        db_path: Path to the DB.
+        con: DuckDB connection to the DB.
+        season: The season to execute the model for.
+        mod_path: The path to the STAN file containing the model.
+
+    Methods:
+    """
     def __init__(
         self
         , db_path:str="./data/twenty_five.db"
@@ -18,8 +40,17 @@ class Model:
         self.season = season
         self.mod_path = mod_path
 
-    def stanify_data(self):
-        """Format the data and place in a JSON file."""
+    def _stanify_data(self):
+        """Pull data and format for STAN.
+
+        This method is responsible for pulling the boxscore data from the DB
+        and formatting it into what is required by the data block in the STAN
+        file. Once it has collected all of the data, it then saves it in a JSON
+        file.
+
+        Returns:
+            A file with the data for the model stored at './data/mod_data.json'
+        """
         # Retrieve the data.
         df = self.con.sql(
             f"""
@@ -79,12 +110,46 @@ class Model:
         # Now send to JSON.
         cmdstanpy.write_stan_json("./data/mod_data.json", data)
 
-    def compile(self):
-        """Compile the Stan model."""
-        self.mod = cmdstanpy.CmdStanModel(stan_file=self.mod_path)
+    def _compile(self):
+        """Compile the STAN model.
 
-    def fit_model(self):
-        """Fit the Stan model."""
+        Takes the path locating the STAN file, and compiles the model. It then
+        returns an object for the compiled model.
+
+        If the user specifies a file that does not exist, I should expect
+        that it will raise a ValueError. In which case, I will raise a
+        FileNotFoundError exception with a message to the user prompting
+        them to double check the path to the stan file.
+
+        Returns:
+            mod(cmdstanpy.CmdStanModel): A model object.
+        """
+        try:
+            self.mod = cmdstanpy.CmdStanModel(stan_file=self.mod_path)
+        except ValueError:
+            raise FileNotFoundError(
+                f"""
+                Path to the stan file passed: {self.mod_path}.
+
+                This appears to be an invalid path. Please check that the path
+                to the stan file is correct.
+                """
+            )
+
+    def _fit_model(self):
+        """Fit the Stan model.
+
+        This method fits the stan model. It loads the data 
+        from the ./data/mod_data.json file, sets the seed to 123,
+        and estimates it with 2000 warmup draws and 2000 sampling draws.
+        Only the sampling draws are stored. The method returns a fit
+        object which contains information about the model's estimates.
+
+        Returns:
+            fit: A cmdstanpy.CmdStanModel.sample object containing attributes
+                and methods to interact with the draws from the model after
+                sampling.
+        """
         self.fit = self.mod.sample(
             data="./data/mod_data.json"
             , seed=123
@@ -93,8 +158,15 @@ class Model:
             , show_console=True
         )
 
-    def get_estimates(self):
-        """Get the estimates from the model."""
+    def _get_estimates(self):
+        """Get the estimates from the model.
+
+        This method is responsible for accessing a summary of the draws,
+        extracting the estimated 5%, 50%, and 95% percentile estimates
+        from the draws that convey the lower, median, and upper-bound
+        estimate of rank for each team in the season for which the model
+        was run on.
+        """
         draws = self.fit.summary()
         draws["team_id"] = draws.index
         self.con.sql(
@@ -132,7 +204,23 @@ class Model:
         )
 
     def _get_plot_data(self):
-        """Retrieve team abbrs and colors."""
+        """Retrieve team abbrs and colors.
+
+        This method is responsible for retrieving data to be used
+        for producing the plots of the ranks for the teams. It extracts
+        the estimated lower-and-upper-bounds and the median ranks for each
+        team in that season. It also joins data to aid with the plotting
+        of the results such as the team abbreviation and the team's primary
+        colors by joining the data based on the season-specific unique team id.
+        It returns this data as a polars.DataFrame to be used for plotting the
+        results.
+
+        Returns:
+            polars.DataFrame: Contains estimated lower-and-upper bounds
+                as well as estimated median ranks for each team along with
+                their team abbreviation and primary color to be used for
+                making the plots that summarize the results of the model.
+        """
         df = self.fit.summary()
         df["team_id"] = df.index
         self.plot_df = self.con.sql(
@@ -174,8 +262,16 @@ class Model:
             """
         ).df()
 
-    def plot_estimates(self):
-        """Plot the ranked estimates."""
+    def _plot_estimates(self):
+        """Plot the ranked estimates.
+        
+        Takes the plot_df attribute that contains data summarizing the results
+        of the model and plots those data.
+
+        Returns:
+            Stores a .html file with a interactive scatter plot that summarizes
+                the results of the model.
+        """
         self._get_plot_data()
         df = self.plot_df
         fig = go.Figure()
@@ -202,18 +298,22 @@ class Model:
         fig.write_html(f"./_output/{self.season}_estimates.html")
 
     def run(self):
-        """Run all methods."""
+        """Evoke all methods.
+
+        This method is responsible for evoking all of the other methods
+        and apply them to the object.
+        """
         logger.info("Model fitting beginning.")
-        self.stanify_data()
+        self._stanify_data()
         logger.success("Stanified the data.")
-        self.compile()
+        self._compile()
         logger.success("Compiled the model.")
-        self.fit_model()
+        self._fit_model()
         logger.success("Fit the model.")
         logger.info("Model fitting complete!")
-        self.get_estimates()
+        self._get_estimates()
         logger.success("Extract estimates")
-        self.plot_estimates()
+        self._plot_estimates()
         logger.success("Plotted estimates.")
 
 
