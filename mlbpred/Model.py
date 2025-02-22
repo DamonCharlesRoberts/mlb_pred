@@ -313,14 +313,28 @@ class Model:
                 y=[df["team_abbr"][i], df["team_abbr"][i]]
                 , x=[df["ci_low"][i], df["ci_high"][i]]
                 , mode="lines"
-                , line=dict(color="#636363", width=1)
+                , line=dict(color="#000000", width=1)
                 , showlegend=False
             ))
         fig.update_layout(
             xaxis_title="Est. Team Rank"
             , showlegend=False
-            , template="plotly_dark"
+            , template="ggplot2"
             , xaxis=dict(autorange="reversed")
+            , annotations=[
+                    go.layout.Annotation(
+                        text="damoncroberts.io"
+                        , x=1
+                        , y=0
+                        , xref="paper"
+                        , yref="paper"
+                        , showarrow=False
+                        , font=dict(size=12)
+                        , align="right"
+                        , xanchor="right"
+                        , yanchor="bottom"
+                    )
+                ],
         )
         fig.write_html(f"./_output/{self.season}_{self.mod_name}_estimates.html")
 
