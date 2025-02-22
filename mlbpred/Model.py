@@ -60,6 +60,10 @@ class Model:
         self.con = db.connect(db_path)
         self.season = season
         self.mod_path = mod_path
+        if mod_path=="./mlbpred/btl.stan":
+            self.mod_name="btl"
+        elif mod_path=="./mlbpred/btl_home.stan":
+            self.mod_name="home"
 
     def _stanify_data(self):
         """Pull data and format for STAN.
@@ -220,7 +224,7 @@ class Model:
                 select *
                 from c
                 order by median, ci_low, ci_high asc
-            ) to './_output/{self.season}_estimates.csv'
+            ) to './_output/{self.season}_{self.mod_name}_estimates.csv'
             """
         )
 
@@ -316,7 +320,7 @@ class Model:
             , template="plotly_dark"
             , xaxis=dict(autorange="reversed")
         )
-        fig.write_html(f"./_output/{self.season}_estimates.html")
+        fig.write_html(f"./_output/{self.season}_{self.mod_name}_estimates.html")
 
     def run(self):
         """Evoke all methods.
