@@ -2,7 +2,9 @@ from mlbpred.Model import Model
 
 # Get list of seasons.
 seasons = [i for i in range(2019,2025)]
-
+# Get list of models.
+mods = ["./mlbpred/btl.stan", "./mlbpred/btl_home.stan"]
 # For the season, execute the model.
 for i in seasons:
-    Model(season=i).run()
+    for j in mods:
+        Model(season=i, mod_path=j).run()
