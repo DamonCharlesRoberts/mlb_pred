@@ -4,8 +4,8 @@ from mlbpred.Model import Model
 seasons = [i for i in range(2019,2025)]
 # Get list of models.
 mods = [
-#    "./mlbpred/btl.stan"
-#    , "./mlbpred/btl_home.stan"
+    "./mlbpred/btl.stan"
+    , "./mlbpred/btl_home.stan"
      "./mlbpred/btl_mag.stan"
 ]
 # For the season, execute the model.
