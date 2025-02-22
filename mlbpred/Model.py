@@ -64,6 +64,8 @@ class Model:
             self.mod_name="btl"
         elif mod_path=="./mlbpred/btl_home.stan":
             self.mod_name="home"
+        elif mod_path=="./mlbpred/btl_mag.stan":
+            self.mod_name="mag"
 
     def _stanify_data(self):
         """Pull data and format for STAN.
