@@ -6,7 +6,7 @@ seasons = [i for i in range(2019,2025)]
 mods = [
     "./mlbpred/btl.stan"
     , "./mlbpred/btl_home.stan"
-     "./mlbpred/btl_mag.stan"
+    , "./mlbpred/btl_mag.stan"
 ]
 # For the season, execute the model.
 for i in seasons:
