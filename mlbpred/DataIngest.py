@@ -139,10 +139,9 @@ class Initializer:
                 , home_team_wins integer
                 , home_team_losses integer
                 , foreign key (season_id) references seasons(season_id)
-                -- Would have these keys set, but the api data has
-                --  duplicate/missing values for these...
-                -- , foreign key (season_id, away_team) references teams(season_id, team_id)
-                -- , foreign key (season_id, home_team) references teams(season_id, team_id)
+                --, foreign key (season_id, away_team) references teams(season_id, team_id)
+                --, foreign key (season_id, home_team) references teams(season_id, team_id)
+                , primary key (season_id, game_id)
             );
             """
         )
@@ -200,6 +199,9 @@ class Ingestor:
         # Add to the teams table if necessary.
         cls._teams(con)
         logger.info("Successfully ingested the teams data.")
+        # Add to the schedule table if necessary.
+        cls._schedule(con)
+        logger.info("Successfully ingested the schedule data.")
         # Close the connection to the DB.
         con.close()
 
@@ -243,19 +245,17 @@ class Ingestor:
                 , offseason_start, offseason_end
             )
             select 
-                a.seasonId
-                , a.hasWildcard
-                , a.preSeasonStartDate
-                , a.seasonStartDate
-                , a.regularSeasonStartDate
-                , a.regularSeasonEndDate
-                , a.seasonEndDate
-                , a.offSeasonStartDate
-                , a.offSeasonEndDate
+                seasonId
+                , hasWildcard
+                , preSeasonStartDate
+                , seasonStartDate
+                , regularSeasonStartDate
+                , regularSeasonEndDate
+                , seasonEndDate
+                , offSeasonStartDate
+                , offSeasonEndDate
             from df_seasons as a
-                right join seasons
-                on a.seasonId like seasons.season_id
-            where seasons.season_id is null;
+            on conflict do nothing;
             """
         )
 
@@ -274,7 +274,7 @@ class Ingestor:
         missing_seasons = con.sql(
             """
             select
-                t.season_id
+                s.season_id
             from teams as t
                 right join seasons as s
                 on t.season_id like s.season_id
@@ -296,100 +296,114 @@ class Ingestor:
                     season_id, team_id, team_name, team_abbr
                 )
                 select 
-                    season, id, name, abbrevation
-                from df_teams;
+                    season, id, name, abbreviation
+                from df_teams
+                on conflict do nothing;
                 """
             )
 
+    @staticmethod
+    def _schedule(con) -> None:
+        """Ingest the schedule for each season.
 
-#    def _schedule(self) -> None:
-#        """Ingest the schedule for each season.
-#
-#        This method is responsible for making a call to the schedule endpoint
-#        in the MLB API to retrieve a response containing the schedule for all
-#        teams in each season of the MLB's history. The response contains
-#        information about each game such as the game_id's and which team_id's
-#        were involved for that particular game. These information will be used
-#        to pull boxscores in the _score method.
-#
-#        From testing the API's response, there are some seasons that have
-#        no details in it. In which case, polars will raise a SchemaError
-#        exception. Since I cannot do anything about this, I continue the
-#        loop.
-#        """
-#        # Pull the data from the Api.
-#        # - Get the list of seasons.
-#        self._list_seasons()
-#        # - For each season, ingest the schedule.
-#        for i in self.season_list:
-#            schedule = get("schedule", params={"sportId": 1, "season": i})
-#            try:
-#                df_schedule = (
-#                    pl.DataFrame(schedule)
-#                    .select(["dates"])
-#                    .unnest("dates")
-#                    .explode("games")
-#                    .unnest("games")
-#                    .unnest("teams")
-#                    .with_columns(
-#                        pl.col("away")
-#                        .struct.field("team")
-#                        .struct.field("id")
-#                        .alias("away_team"),
-#                        pl.col("away")
-#                        .struct.field("leagueRecord")
-#                        .struct.field("wins")
-#                        .alias("away_team_wins"),
-#                        pl.col("away")
-#                        .struct.field("leagueRecord")
-#                        .struct.field("losses")
-#                        .alias("away_team_losses"),
-#                        pl.col("home")
-#                        .struct.field("team")
-#                        .struct.field("id")
-#                        .alias("home_team"),
-#                        pl.col("home")
-#                        .struct.field("leagueRecord")
-#                        .struct.field("wins")
-#                        .alias("home_team_wins"),
-#                        pl.col("home")
-#                        .struct.field("leagueRecord")
-#                        .struct.field("losses")
-#                        .alias("home_team_losses"),
-#                    )
-#                    .select(
-#                        [
-#                            "season",
-#                            "date",
-#                            "gamePk",
-#                            "doubleHeader",
-#                            "away_team",
-#                            "away_team_wins",
-#                            "away_team_losses",
-#                            "home_team",
-#                            "home_team_wins",
-#                            "home_team_losses",
-#                        ]
-#                    )
-#                )
-#                self.con.execute(
-#                    """
-#                        insert into schedule (
-#                            season_id, game_date, game_id, double_header
-#                            , away_team, away_team_wins, away_team_losses
-#                            , home_team, home_team_wins, home_team_losses
-#                        )
-#                        select
-#                            season, date, gamePk, doubleHeader
-#                            , away_team, away_team_wins, away_team_losses
-#                            , home_team, home_team_wins, home_team_losses
-#                        from df_schedule;
-#                        """
-#                )
-#            # If I get a schema error, it means there are not any games
-#            # recorded for that season, so I should move on.
-#            except pl.exceptions.SchemaError:
-#                continue
+        This method is responsible for making a call to the schedule endpoint
+        in the MLB API to retrieve a response containing the schedule for all
+        teams in each season of the MLB. The response contains information
+        about each game such as the game_id's and which team_id's
+        were involved for that particular game. These information will be
+        usedto pull boxscores in the _score method.
+
+        From testing the API's response, there are some seasons that have
+        no details in it. In which case, polars will raise a SchemaError
+        exception. Since I cannot do anything about this, I contine the
+        loop.
+        """
+        # Get the list of seasons with the schedule that I already have.
+        missing_seasons = con.sql(
+            """
+            select
+                s.season_id
+            from schedule as t
+                right join seasons as s
+                on t.season_id like s.season_id
+            where t.season_id is null
+                and cast(s.season_id as integer) between 2019 and 2025
+            """
+        ).fetchall()
+        missing_seasons = [i[0] for i in missing_seasons]
+        # For each season, ingest the schedule.
+        for i in missing_seasons:
+            schedule = get("schedule", params={"sportId": 1, "season": i})
+            try:
+                df_schedule = (
+                    pl.DataFrame(schedule)
+                    .select(["dates"])
+                    .unnest("dates")
+                    .explode("games")
+                    .unnest("games")
+                    .unnest("teams")
+                    .with_columns(
+                        pl.col("away")
+                        .struct.field("team")
+                        .struct.field("id")
+                        .alias("away_team"),
+                        pl.col("away")
+                        .struct.field("leagueRecord")
+                        .struct.field("wins")
+                        .alias("away_team_wins"),
+                        pl.col("away")
+                        .struct.field("leagueRecord")
+                        .struct.field("losses")
+                        .alias("away_team_losses"),
+                        pl.col("home")
+                        .struct.field("team")
+                        .struct.field("id")
+                        .alias("home_team"),
+                        pl.col("home")
+                        .struct.field("leagueRecord")
+                        .struct.field("wins")
+                        .alias("home_team_wins"),
+                        pl.col("home")
+                        .struct.field("leagueRecord")
+                        .struct.field("losses")
+                        .alias("home_team_losses"),
+                    )
+                    .select(
+                        [
+                            "season",
+                            "date",
+                            "gamePk",
+                            "doubleHeader",
+                            "away_team",
+                            "away_team_wins",
+                            "away_team_losses",
+                            "home_team",
+                            "home_team_wins",
+                            "home_team_losses",
+                        ]
+                    )
+                )
+                con.execute(
+                    """
+                    insert into schedule (
+                            season_id, game_date, game_id, double_header
+                            , away_team, away_team_wins, away_team_losses
+                            , home_team, home_team_wins, home_team_losses
+                        )
+                    select
+                        season, date, gamePk, doubleHeader
+                        , away_team, away_team_wins, away_team_losses
+                        , home_team, home_team_wins, home_team_losses
+                    from df_schedule
+                    on conflict do nothing;
+                    """
+                )
+            # If I get a schema error, it means there are not any games
+            # recorded for that season, so I should move on.
+            except pl.exceptions.SchemaError:
+                continue
+
+
 #
 #    def _score(self) -> None:
 #        """Ingest the score data.
