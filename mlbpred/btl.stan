@@ -41,6 +41,9 @@ model {
 }
 
 generated quantities {
+  // PPC
+  array[N] int<lower=0, upper=1> y_rep;
+  y_rep = bernoulli_logit_rng(alpha[away] - alpha[home]);
   // Now compute the ranking of each team based on who won.
   array[J] int rank; // Ranking of the teams.
   {

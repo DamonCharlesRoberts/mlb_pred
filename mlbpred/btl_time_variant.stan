@@ -1,10 +1,10 @@
-// Simple Bradley-Terry model with Home-field advantage.
-
+// Time-variant Bradley-Terry model with Home-field advantage.
 data {
   int<lower=1> N; // Number of games.
   int<lower=1> J; // Number of teams.
-  array[N, 2] int T; // Matrix of team ids. T[N, 1] = Away. T[N, 2] = Home.
-  matrix[N, 2] S; // Matrix of scores. S[N, 1] = Away score; S[N, 2] = Home.
+  array[N,2] int I; // Matrix of team ids. I[N,1] = Away. I[N,2] = Home.
+  matrix[N,2] S; // Matrix of scores. S[N,1] = Away score; S[N,2] = Home.
+  array[N] int T; // Season Id's
 }
 
 transformed data {
@@ -14,39 +14,47 @@ transformed data {
   // - 0 indicates the home team won
   array[N] int<lower=0, upper=1> y;
   for (n in 1:N) {
-    real diff = S[n, 1] - S[n, 2];
+    real diff = S[n,1] - S[n,2];
     if (diff < 0)
       y[n] = 0;
     else
       y[n] = 1;
   }
   // Create a vector indicating each team.
-  array[N] int away = to_array_1d(T[,1]);
-  array[N] int home = to_array_1d(T[,2]);
+  array[N] int away = to_array_1d(I[,1]);
+  array[N] int home = to_array_1d(I[,2]);
 }
 
 parameters {
-  vector[J] alpha; // The ability for each team.
-  real gamma; // Intercept term to provide a home-field advantage.
+  vector[J,T] alpha; // The ability for each team.
+  vector[T] gamma; // Intercept term to provide a home-field advantage.
 }
 
 model {
   // Prior on a logged-odds scale of the ability for each team.
-  alpha ~ normal(0, 1);
+  alpha ~ normal(0,1);
   // Prior for home-field advantage.
-  gamma ~ normal(0, 1);
+  gamma ~ normal(0,1);
   // Compute the ability for each team given who won.
   // The ability for the away team is dependent on whether they
   // beat the home team.
   // If the away team won, then the logged odd would be
   // alpha_away * 1 - alpha_home * 0 + gamma
-  y ~ bernoulli_logit(alpha[away] - alpha[home] + gamma);
+  y ~ bernoulli_logit(
+    alpha[1,season_id] * away[season_id]
+    - alpha[2,season_id] * home[season_id]
+    + gamma
+  );
 }
 
 generated quantities {
   // PPC.
   array[N] int<lower=0, upper=1> y_rep;
-  y_rep = bernoulli_logit_rng(alpha[away] - alpha[home] + gamma);
+  y_rep = bernoulli_logit_rng(
+    alpha[1,season_id] * away[season_id] 
+    - alpha[2,season_id] * home[season_id]
+    + gamma
+  );
   // Now compute the ranking of each team based on who won.
   array[J] int rank; // Ranking of the teams.
   {
