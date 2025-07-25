@@ -202,6 +202,9 @@ class Ingestor:
         # Add to the schedule table if necessary.
         cls._schedule(con)
         logger.info("Successfully ingested the schedule data.")
+        # Add to the scores table if necessary.
+        cls._score(con)
+        logger.info("Successfully ingested the score data.")
         # Close the connection to the DB.
         con.close()
 
@@ -403,79 +406,84 @@ class Ingestor:
             except pl.exceptions.SchemaError:
                 continue
 
+    @staticmethod
+    def _score(con) -> None:
+        """Ingest the score data.
 
-#
-#    def _score(self) -> None:
-#        """Ingest the score data.
-#
-#        This method is responsible for retrieving the box score for each
-#        regular season game in all seasons from the day that this method is
-#        evoked back to 2019. I do this rather than pulling all box scores
-#        ever, because it is extremely laborious and I do not want to make the
-#        MLB reconsider the accessibility of this wonderful resource.
-#
-#        One nifty trick that this method does is that it first checks the database
-#        for any regular season game that I may have between today and 2019. It then
-#        filters those out so that I am not making calls for box scores that I already
-#        have data for. I then update the scores table with the box scores from games
-#        that were not previously there.
-#
-#        The boxscore data are kind of messy. E.g., game_id's aren't a great
-#        primary key even if I use season_id and game_id. So, in cases where the
-#        data violate a constraint for the table, I will skip adding the boxscore
-#        data to the scores table in the db if duckdb raises a BinderException exception.
-#        """
-#        # Get current date.
-#        today = date.today()
-#        # Get the list of game_ids for games before the current date.
-#        games = (
-#            self.con.sql(
-#                f"""
-#            select
-#                schedule.game_id
-#            from schedule
-#                left join seasons
-#                on schedule.season_id=seasons.season_id
-#            where
-#                (schedule.game_date <= cast('{today}' as date))
-#                and (cast(schedule.season_id as integer) >= 2000)
-#                and (schedule.game_date
-#                    between seasons.regular_season_start
-#                        and seasons.regular_season_end)
-#            """
-#            )
-#            .pl()
-#            .to_series()
-#            .to_list()
-#        )
-#        # Get a list of game_ids already in the table.
-#        games_stored = (
-#            self.con.sql(
-#                f"""
-#            select
-#                game_id
-#            from scores
-#            """
-#            )
-#            .pl()
-#            .to_series()
-#            .to_list()
-#        )
-#        # Now filter the games that I need to get scores for.
-#        games_filtered = [x for x in games if x not in games_stored]
-#        if len(games_filtered) > 0:
-#            # Now for each game, extract the score.
-#            for i in games_filtered:
-#                score = get("game_linescore", params={"gamePk": i})
-#                try:
-#                    self.con.execute(
-#                        f"""
-#                        insert into scores (game_id, home_runs, away_runs)
-#                        values (
-#                            {i}
-#                            , {score.get("teams").get("home").get("runs")}
-#                            , {score.get("teams").get("away").get("runs")})
-#                        """
-#                    )
-#                except db.duckdb.BinderException:
-#                    continue
+        This method is responsible for retrieving the box score for each
+        regular season game in all seasons from the day that this method is
+        evoked back to 2019. I do this rather than pulling all box scores
+        ever, because it is extremely laborious and I do not want to make the
+        MLB reconsider the accessibility of this wonderful resource.
+
+        One nifty trick that this method does is that it first checks the database
+        for any regular season game that I may have between today and 2019. It then
+        filters those out so that I am not making calls for box scores that I already
+        have data for. I then update the scores table with the box scores from games
+        that were not previously there.
+
+        The boxscore data are kind of messy. E.g., game_id's aren't a great
+        primary key even if I use season_id and game_id. So, in cases where the
+        data violate a constraint for the table, I will skip adding the boxscore
+        data to the scores table in the db if duckdb raises a BinderException exception.
+        """
+        # Get current date.
+        today = date.today()
+        # Get the list of game_ids for games before the current date.
+        games = (
+            con.sql(
+                f"""
+            select
+                schedule.game_id
+            from schedule
+                left join seasons
+                on schedule.season_id=seasons.season_id
+            where
+                (schedule.game_date <= cast('{today}' as date))
+                and (cast(schedule.season_id as integer) >= 2019)
+                and (schedule.game_date
+                    between seasons.regular_season_start
+                        and seasons.regular_season_end)
+            """
+            )
+            .pl()
+            .to_series()
+            .to_list()
+        )
+        # Get a list of game_ids already in the table.
+        games_stored = (
+            con.sql(
+                """
+                select
+                    game_id
+                from scores
+                """
+            )
+            .pl()
+            .to_series()
+            .to_list()
+        )
+        # Now filter the games that I need to get scores for.
+        games_filtered = [x for x in games if x not in games_stored]
+        if len(games_filtered) > 0:
+            # Now for each game, extract the score.
+            for i in games_filtered:
+                score = get("game_linescore", params={"gamePk": i})
+                try:
+                    assert score.get("teams").get("home").get("runs") and score.get(
+                        "teams"
+                    ).get("away").get("runs")
+                    con.execute(
+                        f"""
+                        insert into scores (game_id, home_runs, away_runs)
+                        values (
+                            {i}
+                            , {score.get("teams").get("home").get("runs")}
+                            , {score.get("teams").get("away").get("runs")}
+                        )
+                        """
+                    )
+                except AssertionError:
+                    continue
+                finally:
+                    logger.info(f"Game imported:{i}")
