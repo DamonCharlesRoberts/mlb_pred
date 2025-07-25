@@ -57,6 +57,11 @@ model {
 }
 
 generated quantities {
+  // PPC.
+  array[N] int<lower=1, upper=7> y_rep;
+  for (n in 1:N){
+    y_rep[n] = ordered_logistic_rng(alpha[away[n]] - alpha[home[n]] + gamma, c);
+  }
   // Now compute the ranking of each team based on who won.
   array[J] int rank; // Ranking of the teams.
   {
