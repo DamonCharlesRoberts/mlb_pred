@@ -14,7 +14,7 @@ function rank(x, d)
     # Create a matrix of samples for the α parameter.
     samples = MCMCChains.group(x, :α).value
     # Initialize an array of rankings.
-    rank = Array{Integer, 3}(undef, 1_000, d, 4)
+    rank_arr = Array{Integer, 3}(undef, 1_000, length(ids), 4)
     # Rank the α for each sample.
     # This should produce an array with the ranking for each object -- in order.
     for c in 1:4
@@ -24,8 +24,8 @@ function rank(x, d)
             # Rank the options by sorting the α values in descending order (higher α means higher rank)
             ranked_indices = sortperm(current_sample, rev=true)  # Sort descending
             # Assign ranks to each option based on sorted order
-            for rank_idx in 1:d
-                rank[i, ranked_indices[rank_idx], c] = rank_idx
+            for rank_idx in 1:length(d)
+                rank_arr[i, ranked_indices[rank_idx], c] = rank_idx
             end
         end
     end
@@ -33,17 +33,18 @@ function rank(x, d)
     df = DataFrame()
     # Place the rankings into a DataFrame.
     for c in 1:4
-        for i in 1:d
+        for (key, value) in ids
             temp_df = DataFrame(
                 iter = repeat(1_000:-1:1, outer=1)
-                , Rank = rank[:, i, c]
-                , Arg = "Argument $i"
+                , Rank = rank_arr[:, value, c]
+                , Team = key
                 , chain = c
             )
             # Append the temporary DataFrame to the main DataFrame
             append!(df, temp_df)
         end
     end
+     
     # Return the result.
     return df
 end
@@ -59,24 +60,24 @@ function plot_rank(fit, n)
     df_rank = rank(fit, n)
     # Plot the rankings
     # - Compute the median rank value and add to plot.
-    df_grouped = groupby(df_rank, :Arg)
+    df_grouped = groupby(df_rank, :Team)
     df_med = combine(df_grouped, :Rank => median => :MedRank)
     plt = @df df_med scatter(
-        :Arg, :MedRank
+        :Team, :MedRank
         , legend=false
         , color=:black
         , marker=:circle
         , markersize=6
     )
     @df df_rank violin!(
-        plt, :Arg, :Rank
+        plt, :Team, :Rank
         , legend=false
         , ylabel="Rank"
         , fill=:lightgray
         , alpha=0.6
     )
     @df df_med scatter!(
-        plt, :Arg, :MedRank
+        plt, :Team, :MedRank
         , legend=false
         , color=:black
         , marker=:circle
