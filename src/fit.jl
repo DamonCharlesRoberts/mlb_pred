@@ -31,8 +31,8 @@ df = DataFrame(
             , home_runs
             , away_runs
             , (case
-                when home_runs > away_runs then 0
-                else 1
+                when home_runs > away_runs then 1
+                else 0
             end) as home_win
         from a
             left join teams
@@ -53,8 +53,12 @@ ids = Dict(Pair.(df.team_abbr, df.home_team))
     end
 end
 
+mod = simple(Matrix(select(df, [:home_team, :away_team])), df.home_win, maximum(df.home_team))
+fit = Turing.sample(mod, NUTS(), MCMCThreads(), 4_000, 4)
+plt = plot_rank(fit, ids)
+
 @model function home(x::Array, y::Array, d::Integer)
-    α ~ filldist(trunctated(Normal(0., 1.), 0., Inf), d)
+    α ~ filldist(truncated(Normal(0., 1.), 0., Inf), d)
     γ ~ Normal(0., 1.)
     for i in 1:length(y)
         θ = γ + log(α[x[i,1]]) - log(α[x[i,2]])
@@ -62,6 +66,6 @@ end
     end
 end
 
-mod = simple(Matrix(select(df, [:home_team, :away_team])), df.home_win, maximum(df.home_team))
+mod = home(Matrix(select(df, [:home_team, :away_team])), df.home_win, maximum(df.home_team))
 fit = Turing.sample(mod, NUTS(), MCMCThreads(), 4_000, 4)
 plt = plot_rank(fit, ids)

@@ -11,14 +11,17 @@ Returns:
 
 """
 function rank(x, d)
+    # Get the dims of the posterior.
+    iters = size(x,1)
+    chains = size(x,3)
     # Create a matrix of samples for the α parameter.
     samples = MCMCChains.group(x, :α).value
     # Initialize an array of rankings.
-    rank_arr = Array{Integer, 3}(undef, 1_000, length(ids), 4)
+    rank_arr = Array{Integer, 3}(undef, iters, length(ids), chains)
     # Rank the α for each sample.
     # This should produce an array with the ranking for each object -- in order.
-    for c in 1:4
-        for i in 1:1_000
+    for c in 1:chains
+        for i in 1:iters
             # Get the current sample for iteration i and chain j
             current_sample = samples[i, :, c]
             # Rank the options by sorting the α values in descending order (higher α means higher rank)
@@ -32,10 +35,10 @@ function rank(x, d)
     # Initialize a DataFrame.
     df = DataFrame()
     # Place the rankings into a DataFrame.
-    for c in 1:4
+    for c in 1:chains
         for (key, value) in ids
             temp_df = DataFrame(
-                iter = repeat(1_000:-1:1, outer=1)
+                iter = repeat(iters:-1:1, outer=1)
                 , Rank = rank_arr[:, value, c]
                 , Team = key
                 , chain = c
