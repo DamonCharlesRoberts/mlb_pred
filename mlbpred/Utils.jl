@@ -68,6 +68,8 @@ function plot_rank(fit, n)
         , color=:black
         , marker=:circle
         , markersize=6
+        , xticks=:all
+        , xrotation=90
     )
     @df df_rank violin!(
         plt, :Team, :Rank
@@ -75,6 +77,8 @@ function plot_rank(fit, n)
         , ylabel="Rank"
         , fill=:lightgray
         , alpha=0.6
+        , xticks=:all
+        , xrotation=90
     )
     @df df_med scatter!(
         plt, :Team, :MedRank
@@ -82,6 +86,8 @@ function plot_rank(fit, n)
         , color=:black
         , marker=:circle
         , markersize=6
+        , xticks=:all
+        , xrotation=90
     )
     return plt
 end
