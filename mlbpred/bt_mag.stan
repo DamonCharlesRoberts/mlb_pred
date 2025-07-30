@@ -30,7 +30,7 @@ generated quantities {
   // PPC.
   array[N] int<lower=1, upper=7> y_rep;
   for (n in 1:N){
-    y_rep[n] = ordered_logistic_rng(log(alpha[X[n,1]]) - log(alpha[X[n,2]) + gamma, c);
+    y_rep[n] = ordered_logistic_rng(log(alpha[X[n,1]]) - log(alpha[X[n,2]]) + gamma, c);
   }
   // Now compute the ranking of each team based on who won.
   array[J] int rank; // Ranking of the teams.
