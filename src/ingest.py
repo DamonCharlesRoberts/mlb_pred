@@ -24,10 +24,11 @@ def main() -> None:
     """Run the data ingestion."""
     path, historical = parse_args()
     # If ingesting historical data, need to initialize tables too.
-    if historical=="y":
-        Initializer(path).run()
+    if historical == "y":
+        Initializer.exe(path)
     # Ingest the data.
-    Ingestor(path).run()
+    Ingestor.exe(path)
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()

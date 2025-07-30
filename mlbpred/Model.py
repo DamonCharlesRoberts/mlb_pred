@@ -4,17 +4,20 @@ This module contains methods to execute the Paired comparisons models
 on the boxscore data stored in the database.
 
 To use these methods, one should first be sure to initialize the data
-and ingest the data from the MLB API by using what is in the 
+and ingest the data from the MLB API by using what is in the
 mlbpred.DataIngest module.
 
 Classes:
     Model: Contains methods to execute the paired comparisons model.
 """
+
 import cmdstanpy
 import duckdb as db
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from loguru import logger
+
 
 class Model:
     """Executes one of the paired comparisons models.
@@ -31,7 +34,7 @@ class Model:
         _stanify_data: Pull data for the given season the model is being run on
             from the DB, converts it to a format digestable by the stan model
             , and stores it in a JSON file.
-        _compile: Compiles the stan model and creates an attribute of the 
+        _compile: Compiles the stan model and creates an attribute of the
             resulting cmdstanpy.CmdStanModel object.
         _fit_model: Fits the model and creates an attribute of the resulting
             cmdstanpy.CmdStanModel.sample object.
@@ -50,22 +53,23 @@ class Model:
             holding an interactive plot.
         run: Applies all other methods in the class to the object.
     """
+
     def __init__(
-        self
-        , db_path:str="./data/twenty_five.db"
-        , season:int=2024
-        , mod_path:str="./mlbpred/btl.stan"
+        self,
+        db_path: str = "./data/twenty_five.db",
+        season: int = 2024,
+        mod_path: str = "./mlbpred/bt.stan",
     ):
         self.db_path = db_path
         self.con = db.connect(db_path)
         self.season = season
         self.mod_path = mod_path
-        if mod_path=="./mlbpred/btl.stan":
-            self.mod_name="btl"
-        elif mod_path=="./mlbpred/btl_home.stan":
-            self.mod_name="home"
-        elif mod_path=="./mlbpred/btl_mag.stan":
-            self.mod_name="mag"
+        if mod_path == "./mlbpred/bt.stan":
+            self.mod_name = "btl"
+        elif mod_path == "./mlbpred/bt_home.stan":
+            self.mod_name = "home"
+        elif mod_path == "./mlbpred/bt_mag.stan":
+            self.mod_name = "mag"
 
     def _stanify_data(self):
         """Pull data and format for STAN.
@@ -117,8 +121,17 @@ class Model:
                     c.game_id
                     , c.away_team
                     , b.const_id as home_team
-                    , c.away_runs
-                    , c.home_runs
+                    , (case
+                        when c.home_runs > c.away_runs then 1
+                        else 0
+                    end) as home_win
+                    , (case
+                        when (c.home_runs - c.away_runs) < -4 then 1
+                        when (c.home_runs - c.away_runs) between -4 and -1 then 2
+                        when (c.home_runs - c.away_runs) == 0 then 3
+                        when (c.home_runs - c.away_runs) between 1 and 4 then 4
+                        when (c.home_runs - c.away_runs) > 4 then 5
+                    end) as home_ord
                 from c
                     left join b
                         on c.home_team=b.team_id
@@ -128,12 +141,20 @@ class Model:
             """
         ).pl()
         # Put in a dictionary to be ready for Stan readable JSON.
-        data = {
-            "N":df.shape[0]
-            , "J": 30
-            , "T":df.select(["away_team", "home_team"]).to_numpy()
-            , "S":df.select(["away_runs", "home_runs"]).to_numpy()
-        }
+        if self.mod_name != "mag":
+            data = {
+                "N": df.shape[0],
+                "J": 30,
+                "X": df.select(["home_team", "away_team"]).to_numpy(),
+                "y": df.select(["home_win"]).to_series().to_numpy(),
+            }
+        else:
+            data = {
+                "N": df.shape[0],
+                "J": 30,
+                "X": df.select(["home_team", "away_team"]).to_numpy(),
+                "y": df.select(["home_ord"]).to_series().to_numpy(),
+            }
         # Now send to JSON.
         cmdstanpy.write_stan_json("./data/mod_data.json", data)
 
@@ -166,7 +187,7 @@ class Model:
     def _fit_model(self):
         """Fit the Stan model.
 
-        This method fits the stan model. It loads the data 
+        This method fits the stan model. It loads the data
         from the ./data/mod_data.json file, sets the seed to 123,
         and estimates it with 2000 warmup draws and 2000 sampling draws.
         Only the sampling draws are stored. The method returns a fit
@@ -178,11 +199,11 @@ class Model:
                 sampling.
         """
         self.fit = self.mod.sample(
-            data="./data/mod_data.json"
-            , seed=123
-            , iter_warmup=2000
-            , iter_sampling=2000
-            , show_console=True
+            data="./data/mod_data.json",
+            seed=123,
+            iter_warmup=1000,
+            iter_sampling=3000,
+            show_console=True,
         )
 
     def _get_estimates(self):
@@ -248,50 +269,45 @@ class Model:
                 their team abbreviation and primary color to be used for
                 making the plots that summarize the results of the model.
         """
-        df = self.fit.summary()
-        df["team_id"] = df.index
-        self.plot_df = self.con.sql(
+        draws = self.fit.stan_variable("rank").T
+        return self.con.sql(
             f"""
             with a as (
-                select
-                    regexp_extract(team_id, '\\d+') as team_id
-                    , "5%" as ci_low
-                    , "50%" as median
-                    , "95%" as ci_high
-                from df
-                where team_id like '%rank%'
+                unpivot draws
+                on *
+                into
+                    name team
+                    value ranks
             )
             , b as (
                 select
-                    distinct cast(team_id as integer) as team_id, team_abbr as team_abbr
+                    (cast(regexp_extract(team, '\\d+') as integer) + 1) as const_id
+                    , ranks
+                from a
+            )
+            , c as (
+                select
+                    distinct 
+                    cast(team_id as integer) as team_id
+                    , team_abbr as team_abbr
                     , row_number() over(order by team_id, team_abbr) as const_id
                 from teams
                 where season_id like '%{self.season}%'
             )
-            , c as (
-                select *
-                from './data/team_colors.json'
-            )
-            select 
-                a.team_id
-                , b.team_abbr
-                , a.ci_low
-                , a.median
-                , a.ci_high
-                , c.primary
-                , c.secondary
-            from a
-                join b
-                    on a.team_id=b.const_id
-                join c
-                    on c.team=b.team_abbr
-            order by a.median
+            select
+                b.const_id
+                , c.team_id
+                , c.team_abbr
+                , b.ranks
+            from b
+                left join c
+                on b.const_id = c.const_id
             """
-        ).df()
+        ).pl()
 
     def _plot_estimates(self):
         """Plot the ranked estimates.
-        
+
         Takes the plot_df attribute that contains data summarizing the results
         of the model and plots those data.
 
@@ -299,44 +315,21 @@ class Model:
             Stores a .html file with a interactive scatter plot that summarizes
                 the results of the model.
         """
-        self._get_plot_data()
-        df = self.plot_df
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            y=df["team_abbr"]
-            , x=df["median"]
-            , mode="markers"
-            , marker=dict(color=df["primary"], size=15)
-        ))
-        for i in range(len(df)):
-            fig.add_trace(go.Scatter(
-                y=[df["team_abbr"][i], df["team_abbr"][i]]
-                , x=[df["ci_low"][i], df["ci_high"][i]]
-                , mode="lines"
-                , line=dict(color="#000000", width=1)
-                , showlegend=False
-            ))
-        fig.update_layout(
-            xaxis_title="Est. Team Rank"
-            , showlegend=False
-            , template="ggplot2"
-            , xaxis=dict(autorange="reversed")
-            , annotations=[
-                    go.layout.Annotation(
-                        text="damoncroberts.io"
-                        , x=1
-                        , y=0
-                        , xref="paper"
-                        , yref="paper"
-                        , showarrow=False
-                        , font=dict(size=12)
-                        , align="right"
-                        , xanchor="right"
-                        , yanchor="bottom"
-                    )
-                ],
+        df = self._get_plot_data()
+        plt.figure(figsize=(12, 8))
+        sns.violinplot(
+            data=df,
+            x="team_abbr",
+            y="ranks",
+            inner="box",
+            density_norm="width",
+            color="lightgray",
         )
-        fig.write_html(f"./_output/{self.season}_{self.mod_name}_estimates.html")
+        plt.ylabel("Posterior of Ranks")
+        plt.xlabel("")
+        plt.xticks(rotation=90)
+        plt.tight_layout()
+        plt.savefig(f"./_output/{self.season}_{self.mod_name}.svg")
 
     def run(self):
         """Evoke all methods.
@@ -356,5 +349,3 @@ class Model:
         logger.success("Extract estimates")
         self._plot_estimates()
         logger.success("Plotted estimates.")
-
-
