@@ -189,7 +189,7 @@ The full repository containing all of this can be found on my
 
 ```{=html}
 <iframe width="800" height="800"
-    src="./_output/2023_btl_estimates.html"
+    src="../_output/2023_btl_estimates.html"
 ></iframe>
 ```
 
@@ -197,7 +197,7 @@ The full repository containing all of this can be found on my
 
 ```{=html}
 <iframe width="800" height="800"
-    src="./_output/2023_home_estimates.html"
+    src="../_output/2023_home_estimates.html"
 ></iframe>
 ```
 :::
@@ -208,7 +208,7 @@ The full repository containing all of this can be found on my
 
 ```{=html}
 <iframe width="800" height="800"
-    src=".,/_output/2022_btl_estimates.html"
+    src="../_output/2022_btl_estimates.html"
 ></iframe>
 ```
 
