@@ -1,0 +1,283 @@
+---
+title: "Bayesian Paired Comparisons for power ranking MLB teams (2019-2025)"
+date: today
+categories:
+    - baseball
+    - bayesian
+    - statistics
+draft: false
+execute:
+    eval: false
+    echo: true
+---
+
+Standings allow us to rank teams based on who has more wins
+and fewer losses. Not all teams play one another over the course of a season.
+For followers of NCAA football, this is often a source of consternation in
+the build-up to the playoff selection: do teams that play and win a lot
+against weaker opponents deserve to have as high of a rank as a team
+that may have relatively more losses but has played against much tougher
+opponents?
+
+The task of sorting this out seems relatively complicated at first
+blush. And it kind of is. Thankfully we have a class of statistical
+models that do not force us to deliberate in a committee. Instead, we
+can estimate each team's latent (latent meaning that we cannot directly
+measure it easily since not every team plays against one another) ability
+based on who they win against and who they lose against.
+
+A class of statistical models that allow us to do just that: Paired comparisons.
+One type of these models is called the Bradley-Terry model.
+
+$$
+\begin{align}
+y_i \sim Bernoulli(logit^{-1}(log(\alpha_h) - log(\alpha_a))\\
+\alpha \sim \mathcal{HN}(0,1)
+\end{align}
+$$
+
+Where $y_i$ is equal to 1 if the home team won and 0 if the away
+team won. $\alpha_a$ is the parameter for the estimated latent ability
+of the away team, while $\alpha_h$ is a parameter for the estimated
+latent ability of the home team. I then sort the estimated $\alpha$ parameter
+in descending order to get an estimated rank for each team.
+
+<details>
+<summary>Show Stan code</summary>
+```{.stan}
+// Simple Bradley-Terry model.
+data {
+  int<lower=1> N; // Number of games.
+  int<lower=1> J; // Number of teams.
+  array[N, 2] int X; // Matrix of team ids.
+  array[N] int<lower=0, upper=1> y; // Did the home team win?
+}
+
+parameters {
+  vector<lower=0>[J] alpha; // The ability for each team.
+}
+
+model {
+  // Prior on a logged-odds scale of the ability for each team.
+  alpha ~ normal(0, 1);
+  // Compute the ability for each team given who won.
+  y ~ bernoulli_logit(log(alpha[X[,1]]) - log(alpha[X[,2]]));
+}
+
+generated quantities {
+  // PPC
+  array[N] int<lower=0, upper=1> y_rep;
+  y_rep = bernoulli_logit_rng(alpha[X[,1]] - alpha[X[,2]]);
+  // Now compute the ranking of each team based on who won.
+  array[J] int rank; // Ranking of the teams.
+  {
+    // Get the ranking of each team in descending order of the alpha.
+    array[J] int rank_index = sort_indices_desc(alpha);
+    // For each team, apply the rank so that the median value for rank[i]
+    // is the rank for team i.
+    for (i in 1:J) {
+      rank[rank_index[i]] = i;
+    }
+  }
+}
+```
+</details>
+
+I also run a version of the model that accounts for home-field advantage.
+To do this, I simply add an intercept term to the model above.
+Doing so, adjusts the logged-odds for the home team winning which can act
+as a parameter to estimate the home-field advantage.
+
+$$
+\begin{align}
+y_i \sim Bernoulli(logit^{-1}(log(\alpha_h) - log(\alpha_a) + \gamma))\\
+\alpha \sim \mathcal{HN}(0,1)\\
+\gamma \sim \mathcal{N}(0,1)
+\end{align}
+$$
+
+<details>
+<summary>Show Stan code</summary>
+```{.stan}
+// Simple Bradley-Terry model with Home-field advantage.
+data {
+  int<lower=1> N; // Number of games.
+  int<lower=1> J; // Number of teams.
+  array[N, 2] int X; // Matrix of team ids.
+  array[N] int<lower=0, upper=1> y; // Did the home team win?
+}
+
+parameters {
+  vector<lower=0>[J] alpha; // The ability for each team.
+  real gamma; // Intercept term to provide a home-field advantage.
+}
+
+model {
+  // Prior on a logged-odds scale of the ability for each team.
+  alpha ~ normal(0, 1);
+  // Prior for home-field advantage.
+  gamma ~ normal(0, 1);
+  // Compute the ability for each team given who won.
+  y ~ bernoulli_logit(log(alpha[X[,1]]) - log(alpha[X[,2]]) + gamma);
+}
+
+generated quantities {
+  // PPC.
+  array[N] int<lower=0, upper=1> y_rep;
+  y_rep = bernoulli_logit_rng(alpha[X[,1]] - alpha[X[,2]] + gamma);
+  // Now compute the ranking of each team based on who won.
+  array[J] int rank; // Ranking of the teams.
+  {
+    // Get the ranking of each team in descending order of the alpha.
+    array[J] int rank_index = sort_indices_desc(alpha);
+    // For each team, apply the rank so that the median value for rank[i]
+    // is the rank for team i.
+    for (i in 1:J) {
+      rank[rank_index[i]] = i;
+    }
+  }
+}
+```
+</details>
+
+I pulled the boxscores for the 2019, 2020, 2021, 2022, 2023, and 2024 regular
+seasons from the MLB API. The 2025 model estimates are based on boxscores as of the date of this blog post update!
+With these data, I fit these models using `cmdstanpy`.
+I fit these models and retain the last 3000 simulations (or draws) of the
+estimated rankings.
+The full repository containing all of this can be found on my
+[GitHub](https://github.com/DamonCharlesRoberts/mlb_pred).
+
+::: {.panel-tabset}
+
+## 2025 Simple
+
+<iframe width="800" height="800"
+    src="../_output/2025_btl.svg"
+></iframe>
+
+## 2025 Home Adv.
+
+<iframe width="800" height="800"
+    src="../_output/2025_home.svg"
+></iframe>
+
+:::
+
+::: {.panel-tabset}
+
+## 2024 Simple
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2024_btl_estimates.html"
+></iframe>
+```
+
+## 2024 Home Adv.
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2024_home_estimates.html"
+></iframe>
+```
+:::
+
+::: {.panel-tabset}
+
+## 2023 Simple
+
+```{=html}
+<iframe width="800" height="800"
+    src="./_output/2023_btl_estimates.html"
+></iframe>
+```
+
+## 2023 Home Adv.
+
+```{=html}
+<iframe width="800" height="800"
+    src="./_output/2023_home_estimates.html"
+></iframe>
+```
+:::
+
+::: {.panel-tabset}
+
+## 2022 Simple
+
+```{=html}
+<iframe width="800" height="800"
+    src=".,/_output/2022_btl_estimates.html"
+></iframe>
+```
+
+## 2022 Home Adv.
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2022_home_estimates.html"
+></iframe>
+```
+
+:::
+
+::: {.panel-tabset}
+
+## 2021 Simple
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2021_btl_estimates.html"
+></iframe>
+```
+
+## 2021 Home Adv.
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2021_home_estimates.html"
+></iframe>
+```
+
+:::
+
+::: {.panel-tabset}
+
+## 2020 Simple
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2020_btl_estimates.html"
+></iframe>
+```
+
+## 2020 Home Adv.
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2020_home_estimates.html"
+></iframe>
+```
+
+:::
+
+::: {.panel-tabset}
+
+## 2019 Simple
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2019_btl_estimates.html"
+></iframe>
+```
+
+## 2019 Home Adv.
+
+```{=html}
+<iframe width="800" height="800"
+    src="../_output/2019_home_estimates.html"
+></iframe>
+```
+
+:::
